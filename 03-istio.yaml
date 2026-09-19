@@ -1,0 +1,67 @@
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata: {name: default, namespace: fraud}
+spec:
+  mtls: {mode: STRICT}
+---
+apiVersion: networking.istio.io/v1
+kind: Gateway
+metadata: {name: fraud-gateway, namespace: fraud}
+spec:
+  selector: {istio: ingressgateway}
+  servers:
+    - port: {number: 443, name: https, protocol: HTTPS}
+      tls: {mode: SIMPLE, credentialName: fraud-tls}
+      hosts: ["api.fraud.example.com"]
+---
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata: {name: fraud-api, namespace: fraud}
+spec:
+  hosts: ["api.fraud.example.com"]
+  gateways: [fraud-gateway]
+  http:
+    - match: [{uri: {prefix: /v1/transactions}}]
+      route:
+        - destination: {host: api-gateway, port: {number: 8080}}
+      timeout: 3s
+      retries: {attempts: 2, perTryTimeout: 1s, retryOn: "5xx,reset,connect-failure"}
+---
+# Canary: 90% to v1, 10% to v2 while a new model or rule pack is validated.
+apiVersion: networking.istio.io/v1
+kind: VirtualService
+metadata: {name: ml-service-canary, namespace: fraud}
+spec:
+  hosts: [ml-service]
+  http:
+    - route:
+        - {destination: {host: ml-service, subset: v1}, weight: 90}
+        - {destination: {host: ml-service, subset: v2}, weight: 10}
+---
+apiVersion: networking.istio.io/v1
+kind: DestinationRule
+metadata: {name: ml-service, namespace: fraud}
+spec:
+  host: ml-service
+  subsets:
+    - {name: v1, labels: {version: v1}}
+    - {name: v2, labels: {version: v2}}
+  trafficPolicy:
+    connectionPool:
+      tcp: {maxConnections: 200}
+      http: {http2MaxRequests: 500, maxRequestsPerConnection: 20}
+    outlierDetection:
+      consecutive5xxErrors: 5
+      interval: 10s
+      baseEjectionTime: 30s
+      maxEjectionPercent: 50
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata: {name: ingestion-callers, namespace: fraud}
+spec:
+  selector: {matchLabels: {app: ingestion}}
+  action: ALLOW
+  rules:
+    - from: [{source: {principals: ["cluster.local/ns/fraud/sa/fraud-sa"]}}]
+      to: [{operation: {methods: [POST], paths: ["/v1/transactions"]}}]

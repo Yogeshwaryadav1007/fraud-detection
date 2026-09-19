@@ -1,0 +1,41 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata: {name: fraud-alerts, namespace: fraud}
+spec:
+  groups:
+    - name: fraud-slo
+      rules:
+        - alert: DecisionLatencyBreach
+          expr: histogram_quantile(0.99, sum(rate(fraud_stage_latency_seconds_bucket[5m])) by (le)) > 1
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: "p99 decision latency above the 1s SLO"
+
+        - alert: KafkaConsumerLag
+          expr: kafka_consumergroup_lag > 50000
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: "Consumer group {{ $labels.consumergroup }} is falling behind"
+
+        - alert: ScorerDegraded
+          expr: increase(fraud_degraded_total[10m]) > 100
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: "{{ $labels.source }} scorer is running degraded"
+
+        - alert: DeclineRateSpike
+          expr: |
+            sum(rate(fraud_decisions_total{decision="DECLINE"}[10m]))
+            / sum(rate(fraud_decisions_total[10m])) > 0.08
+          for: 10m
+          labels: {severity: critical}
+          annotations:
+            summary: "Decline rate above 8% — possible bad rule or model rollout"
+
+        - alert: DLQGrowing
+          expr: increase(fraud_events_total{outcome="dlq"}[15m]) > 50
+          for: 5m
+          labels: {severity: warning}

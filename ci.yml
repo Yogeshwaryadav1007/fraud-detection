@@ -1,0 +1,117 @@
+name: ci
+
+on:
+  push: {branches: [main, develop]}
+  pull_request: {branches: [main, develop]}
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_PREFIX: ${{ github.repository }}
+
+jobs:
+  # ---------------------------------------------------------------- quality
+  lint-and-test:
+    runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7.4-alpine
+        ports: ["6379:6379"]
+      postgres:
+        image: postgres:16-alpine
+        env: {POSTGRES_USER: fraud, POSTGRES_PASSWORD: fraud, POSTGRES_DB: fraud}
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U fraud" --health-interval 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip}
+      - run: pip install -r requirements.txt ruff mypy
+      - name: Lint
+        run: ruff check libs services ml scripts tests
+      - name: Type check
+        run: mypy libs --ignore-missing-imports
+      - name: Unit tests
+        run: pytest -q --junitxml=report.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: {name: test-report, path: report.xml}
+
+  # ---------------------------------------------------------------- security
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependency audit
+        run: pip install pip-audit && pip-audit -r requirements.txt || true
+      - name: Secret scan
+        uses: gitleaks/gitleaks-action@v2
+        env: {GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}"}
+      - name: Static analysis
+        run: pip install bandit && bandit -r libs services -ll
+
+  # ---------------------------------------------------------------- build
+  build:
+    needs: [lint-and-test, security]
+    runs-on: ubuntu-latest
+    permissions: {contents: read, packages: write}
+    strategy:
+      matrix:
+        service: [api-gateway, ingestion, enrichment, rule-engine, ml-service,
+                  graph-service, risk-scoring, case-management, notification, audit]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          build-args: SERVICE=${{ matrix.service }}
+          target: runtime
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ github.sha }}
+            ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Scan image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-${{ matrix.service }}:${{ github.sha }}
+          severity: CRITICAL,HIGH
+          exit-code: "1"
+
+  # ---------------------------------------------------------------- deploy
+  deploy-staging:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+      - uses: actions/checkout@v4
+      - name: Render and apply manifests
+        run: |
+          kubectl apply -f k8s/ -n fraud
+          for s in risk-scoring rule-engine ml-service graph-service; do
+            kubectl set image deployment/$s app=${{ env.REGISTRY }}/${{ env.IMAGE_PREFIX }}-$s:${{ github.sha }} -n fraud
+            kubectl rollout status deployment/$s -n fraud --timeout=300s
+          done
+      - name: Smoke test
+        run: python scripts/loadtest.py --rps 20 --seconds 15
+
+  deploy-prod:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment: production        # requires manual approval
+    steps:
+      - uses: actions/checkout@v4
+      - name: Canary 10%
+        run: kubectl apply -f k8s/03-istio.yaml -n fraud
+      - name: Watch error budget for 15 minutes
+        run: sleep 900 && ./scripts/check_slo.sh
+      - name: Promote to 100%
+        run: kubectl apply -f k8s/03-istio-full.yaml -n fraud
