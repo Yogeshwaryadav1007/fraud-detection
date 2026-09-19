@@ -1,0 +1,106 @@
+# One template repeated per service. Only name/args/port change; everything
+# else (probes, limits, security context, PDB) is deliberately identical so the
+# platform behaves predictably under pressure.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: risk-scoring
+  namespace: fraud
+  labels: {app: risk-scoring, tier: core}
+spec:
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxSurge: 1, maxUnavailable: 0}
+  selector:
+    matchLabels: {app: risk-scoring}
+  template:
+    metadata:
+      labels: {app: risk-scoring, tier: core, version: v1}
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "9106"
+    spec:
+      serviceAccountName: fraud-sa
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: {matchLabels: {app: risk-scoring}}
+      containers:
+        - name: app
+          image: ghcr.io/ORG/fraud-risk-scoring:1.0.0
+          imagePullPolicy: IfNotPresent
+          envFrom:
+            - configMapRef: {name: fraud-config}
+            - secretRef:    {name: fraud-secrets}
+          ports:
+            - {name: metrics, containerPort: 9106}
+          resources:
+            requests: {cpu: 300m, memory: 512Mi}
+            limits:   {cpu: "2",  memory: 1Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+          livenessProbe:
+            httpGet: {path: /metrics, port: 9106}
+            initialDelaySeconds: 20
+            periodSeconds: 15
+          readinessProbe:
+            httpGet: {path: /metrics, port: 9106}
+            initialDelaySeconds: 10
+            periodSeconds: 5
+          volumeMounts:
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: risk-scoring-pdb, namespace: fraud}
+spec:
+  minAvailable: 2
+  selector: {matchLabels: {app: risk-scoring}}
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: risk-scoring-hpa, namespace: fraud}
+spec:
+  scaleTargetRef: {apiVersion: apps/v1, kind: Deployment, name: risk-scoring}
+  minReplicas: 3
+  maxReplicas: 30
+  metrics:
+    - type: Resource
+      resource: {name: cpu, target: {type: Utilization, averageUtilization: 65}}
+    - type: Pods
+      pods:
+        metric: {name: kafka_consumergroup_lag}
+        target: {type: AverageValue, averageValue: "2000"}
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      policies: [{type: Percent, value: 100, periodSeconds: 30}]
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies: [{type: Percent, value: 25, periodSeconds: 60}]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: risk-scoring
+  namespace: fraud
+  labels: {app: risk-scoring}
+spec:
+  selector: {app: risk-scoring}
+  ports: [{name: metrics, port: 9106, targetPort: 9106}]
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: fraud-sa, namespace: fraud}
