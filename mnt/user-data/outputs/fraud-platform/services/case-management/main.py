@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import threading
 from contextlib import asynccontextmanager
 
@@ -104,4 +105,4 @@ def _consumer_thread() -> None:
 
 if __name__ == "__main__":
     threading.Thread(target=_consumer_thread, daemon=True).start()
-    uvicorn.run(app, host="0.0.0.0", port=8080)
+    uvicorn.run(app, host=os.getenv("HOST", "127.0.0.1"), port=8080)
