@@ -17,7 +17,7 @@ from libs.common.bus import Consumer, Producer, run_worker
 from libs.common.config import settings
 from libs.common.schemas import AuditEvent
 from libs.common.stores import pg, redis
-from libs.common.topics import AUDIT, DECISIONS
+from libs.common.topics import AUDIT
 
 log = obs.setup("audit", metrics_port=9107)
 producer = Producer()

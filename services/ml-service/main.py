@@ -12,11 +12,11 @@ import time
 
 import joblib
 import numpy as np
-
 from features import FEATURE_NAMES, vectorize
+
 from libs.common import observability as obs
-from libs.common.config import settings
 from libs.common.bus import Consumer, Producer, run_worker
+from libs.common.config import settings
 from libs.common.schemas import EnrichedTransaction, Reason, Signal
 from libs.common.topics import ANALYSIS_ML, TRANSACTIONS_ENRICHED
 

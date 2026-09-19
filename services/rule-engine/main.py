@@ -4,11 +4,12 @@ from __future__ import annotations
 import asyncio
 import time
 
+from rules import evaluate
+
 from libs.common import observability as obs
 from libs.common.bus import Consumer, Producer, run_worker
 from libs.common.schemas import EnrichedTransaction, Signal
 from libs.common.topics import ANALYSIS_RULES, TRANSACTIONS_ENRICHED
-from rules import evaluate
 
 log = obs.setup("rule-engine", metrics_port=9103)
 producer = Producer()

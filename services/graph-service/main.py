@@ -11,6 +11,7 @@ import asyncio
 import time
 
 import queries as Q
+
 from libs.common import observability as obs
 from libs.common.bus import Consumer, Producer, run_worker
 from libs.common.schemas import EnrichedTransaction, Reason, Signal

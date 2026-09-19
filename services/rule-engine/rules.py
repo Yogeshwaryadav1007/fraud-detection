@@ -5,10 +5,13 @@ version-controlled, unit-tested, and hot-reloaded from a YAML file later.
 """
 from __future__ import annotations
 
+import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
 
 from libs.common.schemas import EnrichedTransaction, Reason
+
+log = logging.getLogger(__name__)
 
 HIGH_RISK_MCC = {"7995", "6051", "4829", "6211"}     # gambling, crypto, wire, securities
 SANCTIONED = {"KP", "IR", "SY", "CU"}
@@ -101,6 +104,7 @@ def evaluate(e: EnrichedTransaction) -> tuple[float, list[Reason]]:
                 hits.append(Reason(code=rule.code, description=rule.description,
                                    weight=rule.weight, evidence=rule.evidence(e)))
                 score += rule.weight
-        except Exception:                                   # noqa: BLE001
+        except Exception:
+            log.exception("rule evaluation failed: %s", rule.code)
             continue          # a broken rule must never stop the pipeline
     return min(score, 100.0), sorted(hits, key=lambda r: -r.weight)

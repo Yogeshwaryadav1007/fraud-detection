@@ -16,12 +16,23 @@ from libs.common import observability as obs
 from libs.common.bus import Consumer, Producer, run_worker
 from libs.common.config import settings
 from libs.common.schemas import (
-    AuditEvent, CaseEvent, Decision, NotificationEvent, Reason, RiskDecision,
+    AuditEvent,
+    CaseEvent,
+    Decision,
+    NotificationEvent,
+    Reason,
+    RiskDecision,
 )
 from libs.common.stores import redis
 from libs.common.topics import (
-    ANALYSIS_GRAPH, ANALYSIS_ML, ANALYSIS_RULES, AUDIT, CASES, DECISIONS,
-    NOTIFICATIONS, TRANSACTIONS_ENRICHED,
+    ANALYSIS_GRAPH,
+    ANALYSIS_ML,
+    ANALYSIS_RULES,
+    AUDIT,
+    CASES,
+    DECISIONS,
+    NOTIFICATIONS,
+    TRANSACTIONS_ENRICHED,
 )
 
 log = obs.setup("risk-scoring", metrics_port=9106)
@@ -96,7 +107,7 @@ async def _deadline(txn_id: str) -> None:
     await asyncio.sleep(settings.DECISION_TIMEOUT_MS / 1000)
     try:
         await finalize(txn_id, reason="timeout")
-    except Exception:                                       # noqa: BLE001
+    except Exception:
         log.exception("deadline finalize failed", extra={"transaction_id": txn_id})
 
 

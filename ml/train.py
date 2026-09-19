@@ -26,9 +26,13 @@ from sklearn.preprocessing import StandardScaler
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "services/ml-service"))
 
-from features import FEATURE_NAMES, vectorize                    # noqa: E402
-from libs.common.schemas import (                                # noqa: E402
-    Channel, CustomerProfile, EnrichedTransaction, TransactionRequest,
+from features import FEATURE_NAMES, vectorize
+
+from libs.common.schemas import (
+    Channel,
+    CustomerProfile,
+    EnrichedTransaction,
+    TransactionRequest,
     VelocityCounters,
 )
 
@@ -117,7 +121,7 @@ def main() -> None:
     print(f"ROC-AUC={auc:.4f}  PR-AUC={ap_score:.4f}")
 
     version = "if-" + hashlib.sha256(
-        f"{args.rows}{args.contamination}{datetime.now().date()}".encode()
+        f"{args.rows}{args.contamination}{datetime.now(timezone.utc).date()}".encode()
     ).hexdigest()[:10]
 
     bundle = {

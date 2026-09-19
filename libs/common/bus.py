@@ -4,10 +4,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import AsyncIterator, Callable
 from datetime import datetime
 from decimal import Decimal
 from enum import Enum
-from typing import Any, AsyncIterator, Callable
+from typing import Any
 
 from aiokafka import AIOKafkaConsumer, AIOKafkaProducer
 from pydantic import BaseModel
@@ -106,7 +107,7 @@ async def run_worker(
         async for topic, value in consumer.stream():
             try:
                 await handler(topic, value)
-            except Exception as exc:                      # noqa: BLE001
+            except Exception as exc:
                 log.exception("handler failed on %s", topic)
                 await producer.send(
                     DLQ,

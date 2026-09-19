@@ -46,8 +46,9 @@ async def handle(_topic: str, value: dict) -> None:
         obs.EVENTS.labels("notification", NOTIFICATIONS, "suppressed").inc()
         return
     body = TEMPLATES.get(ev.template, "Security alert on your account.").format(
-        **{"currency": ev.payload.get("currency", ""),
-           "amount": ev.payload.get("amount", "")})
+        currency=ev.payload.get("currency", ""),
+        amount=ev.payload.get("amount", ""),
+    )
     await deliver(ev, body)
     obs.EVENTS.labels("notification", NOTIFICATIONS, "sent").inc()
 

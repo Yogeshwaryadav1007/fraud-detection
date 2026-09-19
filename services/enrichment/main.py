@@ -8,8 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import math
-import time
-from datetime import datetime, timezone
+from datetime import timezone
 
 from libs.common import observability as obs
 from libs.common.bus import Consumer, Producer, run_worker
@@ -132,7 +131,6 @@ async def last_seen(card_id: str, txn: TransactionRequest, ts: float):
 
 
 async def handle(_topic: str, value: dict) -> None:
-    t0 = time.perf_counter()
     trace_id = value.pop("trace_id", None)
     txn = TransactionRequest.model_validate(value)
     ts = txn.occurred_at.replace(tzinfo=timezone.utc).timestamp()
